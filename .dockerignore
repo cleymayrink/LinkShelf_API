@@ -1,0 +1,21 @@
+# Arquivos e pastas do Git
+.git
+.gitignore
+
+# Arquivos de ambiente locais
+.env
+.env.example
+
+# Dependências que serão instaladas dentro do contêiner
+vendor/
+node_modules/
+
+# Arquivos de log e cache do Laravel
+storage/logs/
+storage/framework/sessions/
+storage/framework/cache/
+storage/framework/views/
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
