@@ -18,6 +18,11 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
+RUN php artisan key:generate
+RUN php artisan config:cache
+RUN php artisan route:cache
+RUN php artisan view:cache
+
 RUN chown -R www-data:www-data storage bootstrap/cache
 
 EXPOSE 80
