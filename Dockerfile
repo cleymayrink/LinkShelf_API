@@ -18,8 +18,6 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
-RUN cp .env.example .env
-
 RUN php artisan key:generate --force
 RUN php artisan config:cache
 RUN php artisan route:cache
