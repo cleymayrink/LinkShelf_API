@@ -19,6 +19,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
 RUN php artisan config:clear
+RUN php artisan cache:clear
+RUN php artisan route:clear
+RUN php artisan view:clear
+
 RUN php artisan key:generate --force
 RUN php artisan config:cache
 RUN php artisan route:cache
