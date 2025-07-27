@@ -155,20 +155,56 @@ class LinkMetadataService
         return (string) $absoluteUri;
     }
 
-    private function extractTextContent(Crawler $crawler): string
+    /**
+     * Extrai o conteúdo de texto relevante da página, focando em blocos de conteúdo principal.
+     */
+    private function extractTextContent(Crawler $crawler): string //
     {
-        // Remove scripts e styles para limpar o texto
-        $crawler->filter('script, style')->each(function (Crawler $crawler) {
-            foreach ($crawler as $node) {
-                $node->parentNode->removeChild($node);
-            }
-        });
+        // Cria uma cópia do crawler para manipular sem afetar outras extrações
+        $contentCrawler = clone $crawler;
 
-        // Pega o texto de parágrafos e cabeçalhos para ter um conteúdo relevante
-        $content = $crawler->filter('p, h1, h2, h3')->each(function (Crawler $crawler) {
-            return $crawler->text();
-        });
+        // Remove scripts, estilos e elementos de navegação/rodapé/anúncio para limpar o texto
+        $contentCrawler->filter('script, style, nav, footer, header, .sidebar, .ad, .advertisement, [role="navigation"], [role="complementary"], .ads, .promo, .banner')
+            ->each(function (Crawler $node) {
+                foreach ($node as $n) {
+                    if ($n->parentNode) {
+                        $n->parentNode->removeChild($n);
+                    }
+                }
+            });
 
-        return implode("\n", $content);
+        $mainContentText = '';
+
+        // Tenta encontrar o conteúdo principal em elementos semânticos ou de conteúdo comum
+        $mainContentNode = $contentCrawler->filter('main, article, .main-content, .post-content, .entry-content, .content, #content, #main, #article')
+            ->first();
+
+        if ($mainContentNode->count() > 0) {
+            // Se um nó de conteúdo principal for encontrado, extrai texto das tags dentro dele
+            $mainContentText = $mainContentNode->filter('p, h1, h2, h3, h4, h5, h6, li, blockquote, span, div')
+                ->each(function (Crawler $node) {
+                    // Retorna o texto, ignorando elementos vazios ou com muito pouco texto (navegação residual)
+                    $text = trim($node->text());
+                    return strlen($text) > 10 ? $text : ''; // Filtra texto muito curto
+                });
+            // Filtra strings vazias resultantes de elementos com pouco texto
+            $mainContentText = array_filter($mainContentText);
+            $mainContentText = implode("\n", $mainContentText);
+        } else {
+            // Fallback: Se nenhum contêiner principal específico for encontrado, tenta no corpo da página
+            $mainContentText = $contentCrawler->filter('body p, body h1, body h2, body h3, body h4, body h5, body h6, body li, body blockquote, body span, body div')
+                ->each(function (Crawler $node) {
+                    $text = trim($node->text());
+                    return strlen($text) > 10 ? $text : '';
+                });
+            $mainContentText = array_filter($mainContentText);
+            $mainContentText = implode("\n", $mainContentText);
+        }
+
+        // Remove múltiplas quebras de linha e espaços em branco desnecessários
+        $mainContentText = preg_replace('/\s*\n\s*/', "\n", $mainContentText);
+        $mainContentText = trim($mainContentText);
+
+        return $mainContentText;
     }
 }

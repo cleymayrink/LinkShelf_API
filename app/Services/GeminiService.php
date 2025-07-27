@@ -16,7 +16,7 @@ class GeminiService
         $this->apiKey = config('services.gemini.key');
     }
 
-    public function generateSummaryAndTags(string $textContent): ?array
+    public function generateSummaryAndTags(string $textContent, string $url): ?array
     {
         if (empty(trim($textContent)) || !$this->apiKey) {
             return null;
@@ -25,11 +25,12 @@ class GeminiService
         // Limita o texto para não exceder os limites da API e os custos
         $truncatedText = substr($textContent, 0, 15000);
 
-        $prompt = "Você é um assistente de catalogação para uma aplicação de 'salvar links'. O texto a seguir foi extraído de um artigo de um site. ".
-              "Analise o texto e retorne um JSON com três chaves: 'title', 'summary', e 'tags'. ".
-              "Para a chave 'tags', forneça um array de 3 a 5 tópicos ou categorias que descrevam o assunto principal do artigo. ".
+         $prompt = "Com base no texto de um site fornecido, gere um JSON com três chaves: 'title', 'summary', e 'tags'. ".
+              "A 'summary' deve ser um resumo direto e conciso (máximo 3 frases) do conteúdo do site, sem introduções. ".
+              "Para a chave 'tags', forneça um array de 3 a 5 tópicos ou categorias que descrevam o assunto principal do site. ".
               "As tags devem ser curtas (1 a 3 palavras), em português, e ideais para agrupar e organizar links sobre tecnologia, programação, notícias, etc. ".
-              "O texto é: \n\n" . $truncatedText;
+              "O texto para análise é: \n\n" . $truncatedText .
+              "caso o texto use a URl do site para contexto: " . $url;
 
         try {
             $response = Http::withHeaders([
@@ -49,9 +50,7 @@ class GeminiService
                 return null;
             }
 
-            // Extrai o conteúdo JSON da resposta
             $jsonString = $response->json('candidates.0.content.parts.0.text');
-            // Remove os acentos graves e ```json do início/fim se existirem
             $cleanJsonString = trim(str_replace(['```json', '```'], '', $jsonString));
 
             $data = json_decode($cleanJsonString, true);

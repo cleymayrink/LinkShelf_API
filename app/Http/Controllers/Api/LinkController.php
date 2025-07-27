@@ -4,12 +4,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Folder;
 use App\Models\Link;
 use App\Models\Tag;
 use App\Services\GeminiService;
 use App\Services\LinkMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class LinkController extends Controller
 {
@@ -22,14 +26,38 @@ class LinkController extends Controller
         $this->geminiService = $geminiService;
     }
 
-    public function index()
+     public function index(Request $request)
     {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
-        $links =  $user->links()->with('tags')->latest()->get();
-        return response()->json($links);
-    }
+        $user = $request->user();
+        $query = $user->links()->with('tags')->latest();
 
+        if ($request->has('folder_id')) {
+            $folderId = $request->query('folder_id');
+            $folder = Folder::with('tags')->find($folderId);
+
+            if (!$folder || $folder->user_id !== $user->id) {
+                return response()->json(['message' => 'Pasta não encontrada ou não autorizada.'], 404);
+            }
+
+            $folderTagIds = $folder->tags->pluck('id')->toArray();
+
+            if (empty($folderTagIds)) {
+                return response()->json([]);
+            }
+
+            // foreach ($folderTagIds as $tagId) {
+            //     $query->whereHas('tags', function ($q) use ($tagId) {
+            //         $q->where('tags.id', $tagId);
+            //     });
+            // }
+            // links que possuem QUALQUER tag da pasta
+            $query->whereHas('tags', function ($q) use ($folderTagIds) {
+                $q->whereIn('tags.id', $folderTagIds);
+            });
+        }
+
+        return $query->get();
+    }
     public function store(Request $request)
     {
 
@@ -39,28 +67,25 @@ class LinkController extends Controller
 
         $url = $validated['url'];
 
-        // Passo 1: Buscar metadados
         $metadata = $this->metadataService->fetch($url);
         if (!$metadata) {
             return response()->json(['message' => 'Não foi possível buscar os dados da URL.'], 422);
         }
 
-        // Passo 2: Gerar resumo com IA (se houver texto)
-        $aiData = $this->geminiService->generateSummaryAndTags($metadata['text_content']);
+        $aiData = $this->geminiService->generateSummaryAndTags($metadata['text_content'], $url);
 
         if ($aiData) {
             $summary = $aiData['summary'];
             $tags = $aiData['tags'];
         }
 
-        // Passo 3: Criar o link no banco de dados
         /** @var \App\Models\User $user */
         $user = Auth::user();
         $link = $user->links()->create([
             'url' => $url,
             'title' => $metadata['title'] ?: 'Título não encontrado',
             'image_url' => $metadata['image_url'],
-            'summary' => $summary ?? 'Resumo não disponível.', // Usa o resumo da IA ou um padrão
+            'summary' => $summary ?? 'Resumo não disponível.',
         ]);
 
         // Passo 4 (futuro): Salvar as tags
@@ -68,16 +93,77 @@ class LinkController extends Controller
         if (!empty($tags)) {
             $tagIds = [];
             foreach ($tags as $tagName) {
-                // Procura a tag, ou cria se não existir
                 $tag = Tag::firstOrCreate(['name' => trim($tagName)]);
                 $tagIds[] = $tag->id;
             }
-            // Associa todas as tags encontradas/criadas a este link
             $link->tags()->sync($tagIds);
         }
 
         $link->load('tags');
 
         return response()->json($link, 201);
+    }
+
+    public function update(Request $request, Link $link)
+    {
+        if ($request->user()->id !== $link->user_id) {
+            return response()->json(['message' => 'Não autorizado.'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'title' => 'required|string|max:255',
+            'summary' => 'nullable|string|max:1000',
+            'tags' => 'nullable|array', // Nomes das tags existentes
+            'tags.*' => 'string|max:50',
+            'new_tag_names' => 'nullable|array',
+            'new_tag_names.*' => 'string|max:50',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $link->title = $request->input('title');
+            $link->summary = $request->input('summary');
+            $link->save();
+
+            $existingTagNames = $request->input('tags', []);
+            $existingTags = Tag::whereIn('name', $existingTagNames)->pluck('id');
+
+            $newTagNames = $request->input('new_tag_names', []);
+            $newTagIds = [];
+            foreach ($newTagNames as $newTagName) {
+                $tag = Tag::firstOrCreate(['name' => $newTagName]);
+                $newTagIds[] = $tag->id;
+            }
+
+            $link->tags()->sync($existingTags->merge($newTagIds));
+
+
+            DB::commit();
+
+            return response()->json($link->load('tags'));
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Erro ao atualizar link: " . $e->getMessage());
+            return response()->json(['message' => 'Erro interno ao atualizar o link.'], 500);
+        }
+    }
+
+    public function destroy(Link $link)
+    {
+        if (auth()->user()->id !== $link->user_id) {
+            return response()->json(['message' => 'Não autorizado.'], 403);
+        }
+
+        try {
+            $link->delete();
+            return response()->json(['message' => 'Link excluído com sucesso.'], 200);
+        } catch (\Exception $e) {
+            Log::error("Erro ao excluir link: " . $e->getMessage());
+            return response()->json(['message' => 'Erro interno ao excluir o link.'], 500);
+        }
     }
 }
