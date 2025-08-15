@@ -88,8 +88,6 @@ class LinkController extends Controller
             'summary' => $summary ?? 'Resumo não disponível.',
         ]);
 
-        // Passo 4 (futuro): Salvar as tags
-
         if (!empty($tags)) {
             $tagIds = [];
             foreach ($tags as $tagName) {
@@ -113,7 +111,7 @@ class LinkController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'summary' => 'nullable|string|max:1000',
-            'tags' => 'nullable|array', // Nomes das tags existentes
+            'tags' => 'nullable|array',
             'tags.*' => 'string|max:50',
             'new_tag_names' => 'nullable|array',
             'new_tag_names.*' => 'string|max:50',
