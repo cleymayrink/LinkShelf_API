@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\Log;
 class LinkMetadataService
 {
     private Crawler $crawler;
+    protected $geminiService;
+
+    public function __construct(GeminiService $geminiService)
+    {
+        $this->geminiService = $geminiService;
+    }
 
     public function fetch(string $url): ?array
     {
@@ -27,6 +33,13 @@ class LinkMetadataService
 
             $title = $this->extractTitle($this->crawler);
             $imageUrl = $this->extractImageUrl($this->crawler, $title);
+
+            if ($imageUrl) {
+                if (!$this->geminiService->isImageSafe($imageUrl)) {
+                    $imageUrl = null;
+                }
+            }
+
             $textContent = $this->extractTextContent($this->crawler);
 
             return [

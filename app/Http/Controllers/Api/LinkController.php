@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class LinkController extends Controller
 {
@@ -73,6 +74,12 @@ class LinkController extends Controller
         }
 
         $aiData = $this->geminiService->generateSummaryAndTags($metadata['text_content'], $url);
+
+        if (isset($aiData['error']) && $aiData['error'] === 'blocked') {
+            throw ValidationException::withMessages([
+                'url' => 'The content of this website is not allowed on the platform.',
+            ]);
+        }
 
         if ($aiData) {
             $summary = $aiData['summary'];
